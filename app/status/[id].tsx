@@ -119,11 +119,7 @@ export default function StatusDetail() {
           </View>
         </View>
 
-        {status.body ? <Text style={styles.body}>{status.body}</Text> : null}
-
-        {status.photo_url ? (
-          <Image source={{ uri: status.photo_url }} style={styles.photo} resizeMode="cover" />
-        ) : null}
+        <Text style={styles.body}>{status.body}</Text>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -162,13 +158,6 @@ const styles = StyleSheet.create({
   },
   initial: { ...type.bodyBold, color: colors.text, fontSize: 18 },
   avatarImg: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface },
-  photo: {
-    width: '100%',
-    aspectRatio: 1.2,
-    borderRadius: 12,
-    marginTop: spacing.md,
-    backgroundColor: colors.surface,
-  },
   name: { ...type.bodyBold, color: colors.text },
   meta: { ...type.small, color: colors.textMuted },
   body: { ...type.body, color: colors.text, fontSize: 22, lineHeight: 32, marginTop: spacing.lg },

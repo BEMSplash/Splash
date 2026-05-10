@@ -15,14 +15,16 @@ import { PersonIcon } from '@/components/icons';
 import {
   Status,
   fetchTrending,
+  fetchNearYou,
   fetchMyList,
   toggleReaction,
 } from '@/lib/statuses';
+import { getCurrentLocation } from '@/lib/permissions';
 import { useAuth, requireAuth } from '@/lib/auth';
 import { useRouter } from 'expo-router';
 import { colors, spacing, type } from '@/theme/tokens';
 
-type Tab = 'trending' | 'familiar';
+type Tab = 'trending' | 'near' | 'list';
 
 export default function Feed() {
   const router = useRouter();
@@ -37,7 +39,10 @@ export default function Feed() {
       let rows: Status[] = [];
       if (tab === 'trending') {
         rows = await fetchTrending(user?.id ?? null);
-      } else if (tab === 'familiar') {
+      } else if (tab === 'near') {
+        const loc = await getCurrentLocation();
+        rows = await fetchNearYou(user?.id ?? null, loc);
+      } else if (tab === 'list') {
         if (!user) {
           setItems([]);
           return;
@@ -111,17 +116,17 @@ export default function Feed() {
       </View>
 
       <View style={styles.tabs}>
-        {(['trending', 'familiar'] as Tab[]).map((t) => (
+        {(['trending', 'near', 'list'] as Tab[]).map((t) => (
           <Pressable
             key={t}
             onPress={() => {
-              if (t === 'familiar' && !requireAuth(user, 'see Familiar thoughts')) return;
+              if (t === 'list' && !requireAuth(user, 'see your list')) return;
               setTab(t);
             }}
             style={styles.tab}
           >
             <Text style={[styles.tabLabel, tab === t && styles.tabActive]}>
-              {t === 'trending' ? 'Trending' : 'Familiar'}
+              {t === 'trending' ? 'Trending' : t === 'near' ? 'Near you' : 'My list'}
             </Text>
             {tab === t && <View style={styles.underline} />}
           </Pressable>
@@ -136,8 +141,10 @@ export default function Feed() {
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No splashes yet</Text>
           <Text style={styles.emptyBody}>
-            {tab === 'familiar'
+            {tab === 'list'
               ? 'Star someone you like or sync your contacts to see splashes from people you know.'
+              : tab === 'near'
+              ? 'No splashes near you right now.'
               : 'Be the first to share a thought.'}
           </Text>
         </View>

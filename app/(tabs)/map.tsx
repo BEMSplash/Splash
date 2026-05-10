@@ -6,7 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from 'react-native';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth, requireAuth } from '@/lib/auth';
@@ -14,6 +14,7 @@ import { Status, fetchTrending, toggleReaction } from '@/lib/statuses';
 import { getCurrentLocation } from '@/lib/permissions';
 import { SplashLogo } from '@/components/SplashLogo';
 import { DropIcon, StarIcon, PersonIcon } from '@/components/icons';
+import Svg, { Circle as SvgCircle, Line } from 'react-native-svg';
 import { colors, radii, spacing, type } from '@/theme/tokens';
 
 // react-native-maps doesn't have a web build, so we conditionally import.
@@ -35,6 +36,22 @@ export default function MapTab() {
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Status | null>(null);
+  const mapRef = useRef<any>(null);
+
+  const recenter = useCallback(async () => {
+    const l = await getCurrentLocation();
+    if (!l || !mapRef.current) return;
+    setLoc(l);
+    mapRef.current.animateToRegion(
+      {
+        latitude: l.lat,
+        longitude: l.lng,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      },
+      500
+    );
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +146,7 @@ export default function MapTab() {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_DEFAULT}
         initialRegion={{
@@ -156,7 +174,7 @@ export default function MapTab() {
         {selected && (
           <Circle
             center={{ latitude: selected.lat!, longitude: selected.lng! }}
-            radius={(selected as any).radius_km ? (selected as any).radius_km * 1000 : 1000}
+            radius={(selected.radius_km || 1) * 1000}
             strokeColor="rgba(255,255,255,0.6)"
             fillColor="rgba(255,255,255,0.08)"
             strokeWidth={1}
@@ -179,6 +197,10 @@ export default function MapTab() {
           <ActivityIndicator color={colors.text} />
         </View>
       )}
+
+      <Pressable onPress={recenter} style={styles.locateBtn} hitSlop={10}>
+        <LocateIcon />
+      </Pressable>
 
       {selected && (
         <View style={styles.sheet} pointerEvents="box-none">
@@ -227,6 +249,19 @@ export default function MapTab() {
   );
 }
 
+function LocateIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <SvgCircle cx={12} cy={12} r={3} fill={colors.text} />
+      <SvgCircle cx={12} cy={12} r={8} stroke={colors.text} strokeWidth={1.5} />
+      <Line x1={12} y1={1} x2={12} y2={4} stroke={colors.text} strokeWidth={1.5} />
+      <Line x1={12} y1={20} x2={12} y2={23} stroke={colors.text} strokeWidth={1.5} />
+      <Line x1={1} y1={12} x2={4} y2={12} stroke={colors.text} strokeWidth={1.5} />
+      <Line x1={20} y1={12} x2={23} y2={12} stroke={colors.text} strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   headerOverlay: {
@@ -256,6 +291,24 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
+  },
+  locateBtn: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: 200,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   pin: {
     width: 22,

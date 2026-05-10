@@ -8,16 +8,15 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Image,
+  Keyboard,
+  Modal,
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Svg, { Path, Rect } from 'react-native-svg';
-import { CloseIcon, CheckIcon } from '@/components/icons';
+import { CheckIcon } from '@/components/icons';
 import { postStatus } from '@/lib/statuses';
 import { getCurrentLocation } from '@/lib/permissions';
-import { pickAndUploadStatusPhoto } from '@/lib/status-photo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, type } from '@/theme/tokens';
@@ -33,8 +32,6 @@ export default function NewSplash() {
   const [includeLocation, setIncludeLocation] = useState(true);
   const [radius, setRadius] = useState<Radius>(1);
   const [showRadiusMenu, setShowRadiusMenu] = useState(false);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,16 +44,9 @@ export default function NewSplash() {
       .then(({ data }) => setUsername(data?.username ?? null));
   }, [user]);
 
-  const onPickPhoto = async () => {
-    if (!user || uploadingPhoto) return;
-    setUploadingPhoto(true);
-    const url = await pickAndUploadStatusPhoto(user.id);
-    setUploadingPhoto(false);
-    if (url) setPhotoUrl(url);
-  };
-
   const onPost = async () => {
-    if ((!body.trim() && !photoUrl) || posting) return;
+    if (!body.trim() || posting) return;
+    Keyboard.dismiss();
     setPosting(true);
     try {
       const loc = includeLocation ? await getCurrentLocation() : null;
@@ -65,7 +55,6 @@ export default function NewSplash() {
         lat: loc?.lat ?? null,
         lng: loc?.lng ?? null,
         radius_km: radius,
-        photo_url: photoUrl,
       });
       router.back();
     } catch (err: any) {
@@ -73,6 +62,12 @@ export default function NewSplash() {
     } finally {
       setPosting(false);
     }
+  };
+
+  const openRadiusMenu = () => {
+    Keyboard.dismiss();
+    if (!includeLocation) setIncludeLocation(true);
+    setShowRadiusMenu(true);
   };
 
   return (
@@ -111,76 +106,30 @@ export default function NewSplash() {
             style={styles.input}
           />
 
-          {photoUrl && (
-            <View style={styles.photoWrap}>
-              <Image source={{ uri: photoUrl }} style={styles.photo} />
-              <Pressable onPress={() => setPhotoUrl(null)} style={styles.photoRemove}>
-                <CloseIcon size={16} color={colors.text} />
-              </Pressable>
-            </View>
-          )}
-
-          <View style={styles.attachRow}>
-            <Pressable onPress={onPickPhoto} hitSlop={8} disabled={uploadingPhoto}>
-              {uploadingPhoto ? (
-                <ActivityIndicator size="small" color={colors.text} />
-              ) : (
-                <PhotoIcon />
-              )}
-            </Pressable>
-            <Text style={styles.charCount}>{body.length}/500</Text>
-          </View>
+          <Text style={styles.charCount}>{body.length}/500</Text>
         </View>
 
-        {showRadiusMenu && (
-          <Pressable style={styles.menuOverlay} onPress={() => setShowRadiusMenu(false)}>
-            <View style={styles.menu}>
-              <Text style={styles.menuTitle}>Share within a radius</Text>
-              {RADII.map((r) => (
-                <Pressable
-                  key={r}
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setRadius(r);
-                    setShowRadiusMenu(false);
-                  }}
-                >
-                  <Text style={styles.menuLabel}>{r === 50 ? '50 km (city-wide)' : `${r} km`}</Text>
-                  {radius === r && <CheckIcon size={18} color={colors.text} />}
-                </Pressable>
-              ))}
-            </View>
-          </Pressable>
-        )}
-
         <View style={styles.footer}>
-          <Pressable
-            onPress={() => {
-              if (!includeLocation) {
-                setIncludeLocation(true);
-                setShowRadiusMenu(true);
-              } else {
-                setShowRadiusMenu((v) => !v);
-              }
-            }}
-            hitSlop={8}
-            style={styles.radiusBtn}
-          >
+          <Pressable onPress={openRadiusMenu} hitSlop={8} style={styles.radiusBtn}>
             <Text style={styles.radiusLabel}>
-              {includeLocation ? `📍 Within ${radius} km ▾` : '◯ Location off'}
+              {includeLocation ? `Within ${radius} km ▾` : '◯ Location off'}
             </Text>
           </Pressable>
           {includeLocation && (
-            <Pressable onPress={() => setIncludeLocation(false)} hitSlop={8} style={{ marginRight: 'auto' }}>
+            <Pressable
+              onPress={() => setIncludeLocation(false)}
+              hitSlop={8}
+              style={{ marginRight: 'auto' }}
+            >
               <Text style={styles.muted}> · turn off</Text>
             </Pressable>
           )}
           <Pressable
             onPress={onPost}
-            disabled={(!body.trim() && !photoUrl) || posting}
+            disabled={!body.trim() || posting}
             style={[
               styles.postBtn,
-              ((!body.trim() && !photoUrl) || posting) && { opacity: 0.5 },
+              (!body.trim() || posting) && { opacity: 0.5 },
             ]}
           >
             {posting ? (
@@ -191,17 +140,35 @@ export default function NewSplash() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
 
-function PhotoIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Rect x={3} y={5} width={18} height={14} rx={2} stroke={colors.text} strokeWidth={1.6} />
-      <Path d="m3 17 5-5 5 5 3-3 5 5" stroke={colors.text} strokeWidth={1.6} strokeLinejoin="round" />
-      <Rect x={14} y={8} width={3} height={3} rx={1.5} fill={colors.text} />
-    </Svg>
+      <Modal
+        visible={showRadiusMenu}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRadiusMenu(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setShowRadiusMenu(false)}>
+          <Pressable style={styles.menu} onPress={() => {}}>
+            <Text style={styles.menuTitle}>Share within a radius</Text>
+            {RADII.map((r) => (
+              <Pressable
+                key={r}
+                style={styles.menuItem}
+                onPress={() => {
+                  setRadius(r);
+                  setShowRadiusMenu(false);
+                }}
+              >
+                <Text style={styles.menuLabel}>
+                  {r === 50 ? '50 km (city-wide)' : `${r} km`}
+                </Text>
+                {radius === r && <CheckIcon size={18} color={colors.text} />}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
@@ -236,29 +203,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 20,
     lineHeight: 28,
+    flex: 1,
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  photoWrap: { position: 'relative', alignSelf: 'flex-start' },
-  photo: { width: 180, height: 180, borderRadius: radii.md, backgroundColor: colors.surface },
-  photoRemove: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  attachRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 'auto',
-  },
-  charCount: { ...type.small, color: colors.textDim },
+  charCount: { ...type.small, color: colors.textDim, alignSelf: 'flex-end' },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -287,14 +236,9 @@ const styles = StyleSheet.create({
   },
   postLabel: { ...type.bodyBold, color: colors.textInverse },
   menuOverlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
-    zIndex: 10,
   },
   menu: {
     backgroundColor: colors.surface,
