@@ -24,7 +24,13 @@
       "expo-router",
       "expo-font",
       "expo-asset",
-      "@sentry/react-native"
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "bem-tech-ltd",
+          "project": "react-native-splash"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
