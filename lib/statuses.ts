@@ -7,6 +7,7 @@ export type Status = {
   lat: number | null;
   lng: number | null;
   radius_km: number;
+  photo_url: string | null;
   created_at: string;
   expires_at: string;
   // joined fields
@@ -25,6 +26,7 @@ type RawStatusRow = {
   lat: number | null;
   lng: number | null;
   radius_km: number;
+  photo_url: string | null;
   created_at: string;
   expires_at: string;
   profiles: { username: string; avatar_url: string | null } | null;
@@ -32,7 +34,7 @@ type RawStatusRow = {
 };
 
 const SELECT = `
-  id, user_id, body, lat, lng, radius_km, created_at, expires_at,
+  id, user_id, body, lat, lng, radius_km, photo_url, created_at, expires_at,
   profiles!statuses_user_id_fkey ( username, avatar_url ),
   reactions ( kind, user_id )
 ` as const;
@@ -47,6 +49,7 @@ function shape(row: RawStatusRow, viewerId: string | null): Status {
     lat: row.lat,
     lng: row.lng,
     radius_km: row.radius_km ?? 1,
+    photo_url: row.photo_url ?? null,
     created_at: row.created_at,
     expires_at: row.expires_at,
     username: row.profiles?.username ?? null,
@@ -157,6 +160,7 @@ export async function postStatus(opts: {
   lat?: number | null;
   lng?: number | null;
   radius_km?: number;
+  photo_url?: string | null;
 }): Promise<Status | null> {
   const { data, error } = await supabase
     .from('statuses')
@@ -165,6 +169,7 @@ export async function postStatus(opts: {
       lat: opts.lat ?? null,
       lng: opts.lng ?? null,
       radius_km: opts.radius_km ?? 1,
+      photo_url: opts.photo_url ?? null,
     })
     .select(SELECT)
     .single();

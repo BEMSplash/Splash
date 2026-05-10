@@ -10,19 +10,23 @@ import {
   Platform,
   Keyboard,
   Modal,
+  Image,
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CheckIcon } from '@/components/icons';
+import Svg, { Path, Rect } from 'react-native-svg';
+import { CheckIcon, CloseIcon } from '@/components/icons';
 import { postStatus } from '@/lib/statuses';
-import { getCurrentLocation } from '@/lib/permissions';
+import { getCurrentLocation, ensureLocationPermission } from '@/lib/permissions';
+import { pickAndUploadStatusPhoto } from '@/lib/status-photo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { colors, radii, spacing, type } from '@/theme/tokens';
 
 const RADII = [1, 5, 10, 25, 50] as const;
 type Radius = (typeof RADII)[number];
+type LocStatus = 'idle' | 'fetching' | 'ok' | 'denied' | 'unavailable';
 
 export default function NewSplash() {
   const router = useRouter();
@@ -32,7 +36,11 @@ export default function NewSplash() {
   const [includeLocation, setIncludeLocation] = useState(true);
   const [radius, setRadius] = useState<Radius>(1);
   const [showRadiusMenu, setShowRadiusMenu] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locStatus, setLocStatus] = useState<LocStatus>('idle');
 
   useEffect(() => {
     if (!user) return;
@@ -44,17 +52,55 @@ export default function NewSplash() {
       .then(({ data }) => setUsername(data?.username ?? null));
   }, [user]);
 
+  // Try to get location upfront so the user knows whether it's working
+  useEffect(() => {
+    if (!includeLocation) return;
+    let cancelled = false;
+    (async () => {
+      setLocStatus('fetching');
+      const granted = await ensureLocationPermission();
+      if (cancelled) return;
+      if (!granted) {
+        setLocStatus('denied');
+        setCoords(null);
+        return;
+      }
+      const c = await getCurrentLocation();
+      if (cancelled) return;
+      if (c) {
+        setCoords(c);
+        setLocStatus('ok');
+      } else {
+        setCoords(null);
+        setLocStatus('unavailable');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [includeLocation]);
+
+  const onPickPhoto = async () => {
+    if (!user || uploadingPhoto) return;
+    setUploadingPhoto(true);
+    const url = await pickAndUploadStatusPhoto(user.id);
+    setUploadingPhoto(false);
+    if (url) setPhotoUrl(url);
+    else Alert.alert('Photo not added', 'Permission denied or upload failed.');
+  };
+
   const onPost = async () => {
-    if (!body.trim() || posting) return;
+    if ((!body.trim() && !photoUrl) || posting) return;
     Keyboard.dismiss();
     setPosting(true);
     try {
-      const loc = includeLocation ? await getCurrentLocation() : null;
+      const useLoc = includeLocation && coords;
       await postStatus({
         body: body.trim(),
-        lat: loc?.lat ?? null,
-        lng: loc?.lng ?? null,
+        lat: useLoc ? coords.lat : null,
+        lng: useLoc ? coords.lng : null,
         radius_km: radius,
+        photo_url: photoUrl,
       });
       router.back();
     } catch (err: any) {
@@ -69,6 +115,18 @@ export default function NewSplash() {
     if (!includeLocation) setIncludeLocation(true);
     setShowRadiusMenu(true);
   };
+
+  const locText = !includeLocation
+    ? '◯ Location off'
+    : locStatus === 'fetching'
+    ? '📍 Locating…'
+    : locStatus === 'ok'
+    ? `📍 Within ${radius} km ▾`
+    : locStatus === 'denied'
+    ? '⚠️ Permission denied'
+    : locStatus === 'unavailable'
+    ? '⚠️ GPS unavailable'
+    : `📍 Within ${radius} km ▾`;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -106,14 +164,30 @@ export default function NewSplash() {
             style={styles.input}
           />
 
-          <Text style={styles.charCount}>{body.length}/500</Text>
+          {photoUrl && (
+            <View style={styles.photoWrap}>
+              <Image source={{ uri: photoUrl }} style={styles.photo} />
+              <Pressable onPress={() => setPhotoUrl(null)} style={styles.photoRemove}>
+                <CloseIcon size={16} color={colors.text} />
+              </Pressable>
+            </View>
+          )}
+
+          <View style={styles.attachRow}>
+            <Pressable onPress={onPickPhoto} hitSlop={8} disabled={uploadingPhoto}>
+              {uploadingPhoto ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <PhotoIcon />
+              )}
+            </Pressable>
+            <Text style={styles.charCount}>{body.length}/500</Text>
+          </View>
         </View>
 
         <View style={styles.footer}>
           <Pressable onPress={openRadiusMenu} hitSlop={8} style={styles.radiusBtn}>
-            <Text style={styles.radiusLabel}>
-              {includeLocation ? `Within ${radius} km ▾` : '◯ Location off'}
-            </Text>
+            <Text style={styles.radiusLabel}>{locText}</Text>
           </Pressable>
           {includeLocation && (
             <Pressable
@@ -124,12 +198,21 @@ export default function NewSplash() {
               <Text style={styles.muted}> · turn off</Text>
             </Pressable>
           )}
+          {!includeLocation && (
+            <Pressable
+              onPress={() => setIncludeLocation(true)}
+              hitSlop={8}
+              style={{ marginRight: 'auto' }}
+            >
+              <Text style={styles.muted}> · turn on</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={onPost}
-            disabled={!body.trim() || posting}
+            disabled={(!body.trim() && !photoUrl) || posting}
             style={[
               styles.postBtn,
-              (!body.trim() || posting) && { opacity: 0.5 },
+              ((!body.trim() && !photoUrl) || posting) && { opacity: 0.5 },
             ]}
           >
             {posting ? (
@@ -172,6 +255,16 @@ export default function NewSplash() {
   );
 }
 
+function PhotoIcon() {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Rect x={3} y={5} width={18} height={14} rx={2} stroke={colors.text} strokeWidth={1.6} />
+      <Path d="m3 17 5-5 5 5 3-3 5 5" stroke={colors.text} strokeWidth={1.6} strokeLinejoin="round" />
+      <Rect x={14} y={8} width={3} height={3} rx={1.5} fill={colors.text} />
+    </Svg>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
@@ -203,11 +296,29 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 20,
     lineHeight: 28,
-    flex: 1,
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  charCount: { ...type.small, color: colors.textDim, alignSelf: 'flex-end' },
+  photoWrap: { position: 'relative', alignSelf: 'flex-start' },
+  photo: { width: 180, height: 180, borderRadius: radii.md, backgroundColor: colors.surface },
+  photoRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 'auto',
+  },
+  charCount: { ...type.small, color: colors.textDim },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

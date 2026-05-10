@@ -44,7 +44,11 @@ export function StatusCard({ status, onDrop, onStar, onPress }: Props) {
         </View>
       </View>
 
-      <Text style={styles.body}>{status.body}</Text>
+      {status.body ? <Text style={styles.body}>{status.body}</Text> : null}
+
+      {status.photo_url ? (
+        <Image source={{ uri: status.photo_url }} style={styles.photo} resizeMode="cover" />
+      ) : null}
 
       <View style={styles.reactions}>
         <Pressable
@@ -102,6 +106,12 @@ const styles = StyleSheet.create({
   name: { ...type.bodyBold, color: colors.text },
   meta: { ...type.small, color: colors.textMuted },
   body: { ...type.body, color: colors.text, fontSize: 18, lineHeight: 26 },
+  photo: {
+    width: '100%',
+    aspectRatio: 1.5,
+    borderRadius: radii.md,
+    backgroundColor: colors.bg,
+  },
   reactions: { flexDirection: 'row', gap: spacing.lg },
   reactBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   count: { ...type.caption, color: colors.text },
