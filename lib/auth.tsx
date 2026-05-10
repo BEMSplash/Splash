@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import { router } from 'expo-router';
 import { supabase } from './supabase';
+import { setSentryUser } from './sentry';
 
 type AuthState = {
   session: Session | null;
@@ -19,11 +20,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      setSentryUser(
+        data.session?.user
+          ? { id: data.session.user.id, phone: data.session.user.phone ?? null }
+          : null
+      );
       setLoading(false);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
+      setSentryUser(s?.user ? { id: s.user.id, phone: s.user.phone ?? null } : null);
     });
 
     return () => data.subscription.unsubscribe();

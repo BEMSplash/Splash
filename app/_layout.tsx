@@ -1,11 +1,26 @@
-import { Stack } from 'expo-router';
+// Sentry side-effect import must run before anything else in the app graph
+import '@/lib/sentry';
+
+import { Stack, useNavigationContainerRef } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Sentry from '@sentry/react-native';
 import { AuthProvider } from '@/lib/auth';
+import { navigationIntegration, SentryWrapper } from '@/lib/sentry';
 import { colors } from '@/theme/tokens';
 
-export default function RootLayout() {
+function RootLayout() {
+  // Hand the current navigation container to Sentry so breadcrumbs include
+  // the current route + previous route on every event.
+  const navRef = useNavigationContainerRef();
+  useEffect(() => {
+    if (navRef?.current) {
+      navigationIntegration.registerNavigationContainer(navRef);
+    }
+  }, [navRef]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <SafeAreaProvider>
@@ -36,3 +51,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default SentryWrapper(RootLayout);

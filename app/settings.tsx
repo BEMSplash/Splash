@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { syncContacts } from '@/lib/contacts-sync';
 import { ensureNotificationsPermission } from '@/lib/permissions';
+import { captureBugReport } from '@/lib/sentry';
 import { colors, radii, spacing, type } from '@/theme/tokens';
 
 type NotifPref = 'off' | 'familiar' | 'both';
@@ -81,6 +82,28 @@ export default function Settings() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const onReportBug = () => {
+    Alert.prompt(
+      'Report a bug',
+      'Briefly describe what happened. We collect the most recent app activity to help diagnose.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: (text?: string) => {
+            if (!text || !text.trim()) return;
+            captureBugReport(text.trim(), {
+              screen: 'settings',
+              userId: user?.id ?? 'guest',
+            });
+            Alert.alert('Thanks', 'Your report has been sent.');
+          },
+        },
+      ],
+      'plain-text'
+    );
   };
 
   const onInvite = async () => {
@@ -164,6 +187,14 @@ export default function Settings() {
 
           <Section title="Invite friends">
             <PrimaryButton label="Invite contacts" variant="dark" onPress={onInvite} />
+          </Section>
+
+          <Section title="Help us improve">
+            <PrimaryButton label="Report a bug" variant="dark" onPress={onReportBug} />
+            <Text style={styles.help}>
+              Sends a short description plus recent app activity to our error tracker.
+              No personal data leaves your device beyond what you write.
+            </Text>
           </Section>
 
           <View style={{ height: spacing.xl }} />
