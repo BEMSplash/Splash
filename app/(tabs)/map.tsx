@@ -5,6 +5,10 @@ import {
   Platform,
   Pressable,
   ActivityIndicator,
+  FlatList,
+  Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +21,6 @@ import { DropIcon, StarIcon, PersonIcon } from '@/components/icons';
 import Svg, { Circle as SvgCircle, Line } from 'react-native-svg';
 import { colors, radii, spacing, type } from '@/theme/tokens';
 
-// react-native-maps doesn't have a web build, so we conditionally import.
 let MapView: any, Marker: any, Circle: any, PROVIDER_DEFAULT: any;
 if (Platform.OS !== 'web') {
   const mod = require('react-native-maps');
@@ -28,6 +31,10 @@ if (Platform.OS !== 'web') {
 }
 
 const PARIS = { latitude: 48.8566, longitude: 2.3522 };
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = SCREEN_WIDTH - 2 * 16; // matches CARD_MARGIN below
+const CARD_MARGIN = 16;
+const SNAP = CARD_WIDTH + spacing.sm;
 
 export default function MapTab() {
   const router = useRouter();
@@ -35,8 +42,9 @@ export default function MapTab() {
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Status | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   const mapRef = useRef<any>(null);
+  const listRef = useRef<FlatList<Status>>(null);
 
   const recenter = useCallback(async () => {
     const l = await getCurrentLocation();
@@ -61,7 +69,6 @@ export default function MapTab() {
         fetchTrending(user?.id ?? null, 200),
       ]);
       setLoc(l);
-      // only show statuses that have lat/lng
       setStatuses(rows.filter((s) => s.lat != null && s.lng != null));
     } catch (e) {
       console.warn('map load failed', e);
@@ -73,6 +80,36 @@ export default function MapTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // When activeIndex changes, pan the map to that post
+  useEffect(() => {
+    const s = statuses[activeIndex];
+    if (!s || !mapRef.current) return;
+    mapRef.current.animateToRegion(
+      {
+        latitude: s.lat!,
+        longitude: s.lng!,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
+      },
+      350
+    );
+  }, [activeIndex, statuses]);
+
+  const onCarouselScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const idx = Math.round(x / SNAP);
+    if (idx !== activeIndex && idx >= 0 && idx < statuses.length) {
+      setActiveIndex(idx);
+    }
+  };
+
+  const focusStatus = (id: string) => {
+    const idx = statuses.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    listRef.current?.scrollToIndex({ index: idx, animated: true });
+    setActiveIndex(idx);
+  };
 
   const onReact = async (status: Status, kind: 'drop' | 'star') => {
     if (!requireAuth(user, kind === 'drop' ? 'drop a 💧' : 'star a splash')) return;
@@ -92,13 +129,6 @@ export default function MapTab() {
           : s
       )
     );
-    if (selected?.id === status.id) {
-      setSelected({
-        ...selected,
-        reacted_drop: kind === 'drop' ? !active : !!selected.reacted_drop,
-        reacted_star: kind === 'star' ? !active : !!selected.reacted_star,
-      });
-    }
     try {
       await toggleReaction(status.id, kind, active, status.user_id);
     } catch {
@@ -112,7 +142,8 @@ export default function MapTab() {
     ? { latitude: statuses[0].lat!, longitude: statuses[0].lng! }
     : PARIS;
 
-  // Web fallback — react-native-maps doesn't render on web
+  const active = statuses[activeIndex];
+
   if (Platform.OS === 'web') {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -159,22 +190,22 @@ export default function MapTab() {
         showsMyLocationButton={false}
         userInterfaceStyle="dark"
       >
-        {statuses.map((s) => (
+        {statuses.map((s, i) => (
           <Marker
             key={s.id}
             coordinate={{ latitude: s.lat!, longitude: s.lng! }}
-            onPress={() => setSelected(s)}
+            onPress={() => focusStatus(s.id)}
             tracksViewChanges={false}
           >
-            <View style={styles.pin}>
+            <View style={[styles.pin, i === activeIndex && styles.pinActive]}>
               <View style={styles.pinInner} />
             </View>
           </Marker>
         ))}
-        {selected && (
+        {active && (
           <Circle
-            center={{ latitude: selected.lat!, longitude: selected.lng! }}
-            radius={(selected.radius_km || 1) * 1000}
+            center={{ latitude: active.lat!, longitude: active.lng! }}
+            radius={(active.radius_km || 1) * 1000}
             strokeColor="rgba(255,255,255,0.6)"
             fillColor="rgba(255,255,255,0.08)"
             strokeWidth={1}
@@ -185,7 +216,15 @@ export default function MapTab() {
       <SafeAreaView style={styles.headerOverlay} edges={['top']} pointerEvents="box-none">
         <View style={{ width: 32 }} />
         <SplashLogo size={28} color={colors.text} />
-        <Pressable onPress={() => router.push('/(tabs)/profile')}>
+        <Pressable
+          onPress={() => {
+            if (!user) {
+              router.push('/auth/create-account');
+              return;
+            }
+            router.push('/(tabs)/profile');
+          }}
+        >
           <View style={styles.avatar}>
             <PersonIcon size={20} color={colors.text} />
           </View>
@@ -202,47 +241,75 @@ export default function MapTab() {
         <LocateIcon />
       </Pressable>
 
-      {selected && (
-        <View style={styles.sheet} pointerEvents="box-none">
-          <Pressable
-            style={styles.sheetCard}
-            onPress={() => router.push(`/status/${selected.id}`)}
-          >
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetName}>{selected.username || 'Anonymous'}</Text>
-              <Pressable onPress={() => setSelected(null)} hitSlop={10}>
-                <Text style={styles.sheetClose}>×</Text>
-              </Pressable>
-            </View>
-            <Text numberOfLines={3} style={styles.sheetBody}>
-              {selected.body}
-            </Text>
-            <View style={styles.sheetActions}>
+      {statuses.length > 0 && (
+        <View style={styles.carouselWrap} pointerEvents="box-none">
+          <View style={styles.dotsRow} pointerEvents="none">
+            {statuses.slice(0, 12).map((_, i) => (
+              <View
+                key={i}
+                style={[styles.dot, i === activeIndex && styles.dotActive]}
+              />
+            ))}
+            {statuses.length > 12 && <Text style={styles.dotsMore}>+{statuses.length - 12}</Text>}
+          </View>
+          <FlatList
+            ref={listRef}
+            data={statuses}
+            keyExtractor={(s) => s.id}
+            horizontal
+            pagingEnabled={false}
+            decelerationRate="fast"
+            snapToInterval={SNAP}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: CARD_MARGIN / 2 }}
+            onMomentumScrollEnd={onCarouselScrollEnd}
+            getItemLayout={(_, index) => ({
+              length: SNAP,
+              offset: SNAP * index,
+              index,
+            })}
+            renderItem={({ item }) => (
               <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onReact(selected, 'drop');
-                }}
-                style={styles.reactBtn}
-                hitSlop={8}
+                style={styles.card}
+                onPress={() => router.push(`/status/${item.id}`)}
               >
-                <DropIcon size={18} color={colors.text} filled={selected.reacted_drop} />
-                <Text style={styles.reactCount}>{selected.drop_count ?? 0}</Text>
+                <View style={styles.cardHead}>
+                  <Text style={styles.cardName}>{item.username || 'Anonymous'}</Text>
+                  <Text style={styles.cardRadius}>within {item.radius_km} km</Text>
+                </View>
+                <Text numberOfLines={4} style={styles.cardBody}>
+                  {item.body || '📷 Photo'}
+                </Text>
+                <View style={styles.cardActions}>
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onReact(item, 'drop');
+                    }}
+                    style={styles.reactBtn}
+                    hitSlop={8}
+                  >
+                    <DropIcon size={18} color={colors.text} filled={item.reacted_drop} />
+                    <Text style={styles.reactCount}>{item.drop_count ?? 0}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onReact(item, 'star');
+                    }}
+                    style={styles.reactBtn}
+                    hitSlop={8}
+                  >
+                    <StarIcon size={18} color={colors.text} filled={item.reacted_star} />
+                    <Text style={styles.reactCount}>{item.star_count ?? 0}</Text>
+                  </Pressable>
+                  <Text style={styles.swipeHint}>Swipe →</Text>
+                </View>
               </Pressable>
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onReact(selected, 'star');
-                }}
-                style={styles.reactBtn}
-                hitSlop={8}
-              >
-                <StarIcon size={18} color={colors.text} filled={selected.reacted_star} />
-                <Text style={styles.reactCount}>{selected.star_count ?? 0}</Text>
-              </Pressable>
-              <Text style={styles.sheetHint}>Tap to open</Text>
-            </View>
-          </Pressable>
+            )}
+          />
         </View>
       )}
     </View>
@@ -295,7 +362,7 @@ const styles = StyleSheet.create({
   locateBtn: {
     position: 'absolute',
     right: spacing.md,
-    bottom: 200,
+    bottom: 280,
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -320,31 +387,63 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.bg,
   },
+  pinActive: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 3,
+  },
   pinInner: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.bg,
   },
-  sheet: {
+  carouselWrap: {
     position: 'absolute',
     bottom: 100, // above tab bar
-    left: spacing.md,
-    right: spacing.md,
+    left: 0,
+    right: 0,
+    gap: spacing.sm,
   },
-  sheetCard: {
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  dotActive: {
+    backgroundColor: colors.text,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotsMore: { ...type.small, color: colors.textMuted, marginLeft: spacing.xs },
+  card: {
+    width: CARD_WIDTH,
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
     padding: spacing.md,
     gap: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    marginRight: spacing.sm,
   },
-  sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sheetName: { ...type.bodyBold, color: colors.text },
-  sheetClose: { color: colors.textMuted, fontSize: 22, lineHeight: 22 },
-  sheetBody: { ...type.body, color: colors.text },
-  sheetActions: {
+  cardHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardName: { ...type.bodyBold, color: colors.text },
+  cardRadius: { ...type.small, color: colors.textMuted },
+  cardBody: { ...type.body, color: colors.text, minHeight: 48 },
+  cardActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.lg,
@@ -352,7 +451,7 @@ const styles = StyleSheet.create({
   },
   reactBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reactCount: { ...type.caption, color: colors.text },
-  sheetHint: { ...type.small, color: colors.textMuted, marginLeft: 'auto' },
+  swipeHint: { ...type.small, color: colors.textMuted, marginLeft: 'auto' },
   webEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   title: { ...type.title, color: colors.text },
   muted: { ...type.body, color: colors.textMuted, textAlign: 'center' },

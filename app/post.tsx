@@ -90,7 +90,8 @@ export default function NewSplash() {
   };
 
   const onPost = async () => {
-    if ((!body.trim() && !photoUrl) || posting) return;
+    // Body required by schema (NOT NULL) until migration 0005 lifts it.
+    if (!body.trim() || posting) return;
     Keyboard.dismiss();
     setPosting(true);
     try {
@@ -214,10 +215,10 @@ export default function NewSplash() {
           )}
           <Pressable
             onPress={onPost}
-            disabled={(!body.trim() && !photoUrl) || posting}
+            disabled={!body.trim() || posting}
             style={[
               styles.postBtn,
-              ((!body.trim() && !photoUrl) || posting) && { opacity: 0.5 },
+              (!body.trim() || posting) && { opacity: 0.5 },
             ]}
           >
             {posting ? (

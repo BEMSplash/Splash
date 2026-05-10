@@ -1,61 +1,80 @@
+import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
+const AVATAR_SIZE = 512;
+
 /**
- * Lets the user pick a square photo from their library, uploads to
- * the `avatars` bucket under <userId>/avatar.<ext>, then writes the
- * public URL into profiles.avatar_url. Returns the new URL or null.
+ * Pick a square photo, resize to 512x512 JPEG, upload to avatars/<userId>/avatar.jpg,
+ * then write the public URL into profiles.avatar_url. Surfaces errors via Alert.
+ * Returns the new URL or null on cancel/failure.
  */
 export async function pickAndUploadAvatar(userId: string): Promise<string | null> {
-  // Permission
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return null;
+  try {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        'Photo access needed',
+        'To set an avatar, please grant photo library access in Settings.'
+      );
+      return null;
+    }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.8,
-    base64: true,
-  });
-  if (result.canceled || !result.assets?.[0]) return null;
-
-  const asset = result.assets[0];
-  if (!asset.base64) return null;
-
-  const ext = (asset.uri.match(/\.(\w+)(?:\?|$)/)?.[1] || 'jpg').toLowerCase();
-  const path = `${userId}/avatar.${ext}`;
-
-  // Decode base64 → bytes
-  const bytes = decodeBase64(asset.base64);
-
-  const { error: upErr } = await supabase.storage
-    .from('avatars')
-    .upload(path, bytes.buffer as ArrayBuffer, {
-      contentType: asset.mimeType || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-      upsert: true,
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+      exif: false,
     });
-  if (upErr) {
-    console.warn('avatar upload failed:', upErr.message);
+    if (picked.canceled || !picked.assets?.[0]) return null;
+
+    const manipulated = await ImageManipulator.manipulateAsync(
+      picked.assets[0].uri,
+      [{ resize: { width: AVATAR_SIZE, height: AVATAR_SIZE } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    if (!manipulated.base64) {
+      Alert.alert('Upload failed', 'Could not process the image.');
+      return null;
+    }
+
+    const path = `${userId}/avatar.jpg`;
+    const bytes = decodeBase64(manipulated.base64);
+
+    const { error: upErr } = await supabase.storage.from('avatars').upload(
+      path,
+      bytes.buffer as ArrayBuffer,
+      {
+        contentType: 'image/jpeg',
+        upsert: true,
+      }
+    );
+    if (upErr) {
+      Alert.alert('Upload failed', upErr.message);
+      return null;
+    }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    // cache-bust so the new image shows immediately
+    const url = `${data.publicUrl}?v=${Date.now()}`;
+
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: url })
+      .eq('id', userId);
+    if (updErr) {
+      Alert.alert('Saved photo, but could not update profile', updErr.message);
+      return null;
+    }
+    return url;
+  } catch (err: any) {
+    Alert.alert('Avatar error', err?.message || 'Unexpected error.');
     return null;
   }
-
-  const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(path);
-  // bust cache
-  const url = `${publicUrl.publicUrl}?v=${Date.now()}`;
-
-  const { error: updErr } = await supabase
-    .from('profiles')
-    .update({ avatar_url: url })
-    .eq('id', userId);
-  if (updErr) {
-    console.warn('profile avatar_url update failed:', updErr.message);
-    return null;
-  }
-  return url;
 }
 
-// Tiny base64 decoder (no Node Buffer in RN)
 function decodeBase64(input: string): Uint8Array {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const lookup = new Uint8Array(256);
