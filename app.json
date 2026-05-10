@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Splash",
+    "slug": "splash",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "splash",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.splash.app"
+    },
+    "android": {
+      "package": "com.splash.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
