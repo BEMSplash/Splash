@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Image } from 'expo-image';
 import { Status } from '@/lib/statuses';
 import { DropIcon, StarIcon } from './icons';
 import { colors, radii, spacing, type } from '@/theme/tokens';
@@ -27,7 +28,12 @@ export function StatusCard({ status, onDrop, onStar, onPress }: Props) {
     <Pressable onPress={onPress} style={styles.card}>
       <View style={styles.header}>
         {status.avatar_url ? (
-          <Image source={{ uri: status.avatar_url }} style={styles.avatarImg} />
+          <Image
+            source={status.avatar_url}
+            style={styles.avatarImg}
+            contentFit="cover"
+            transition={150}
+          />
         ) : (
           <View style={styles.avatar}>
             <Text style={styles.initial}>{initials}</Text>
@@ -47,7 +53,13 @@ export function StatusCard({ status, onDrop, onStar, onPress }: Props) {
       {status.body ? <Text style={styles.body}>{status.body}</Text> : null}
 
       {status.photo_url ? (
-        <Image source={{ uri: status.photo_url }} style={styles.photo} resizeMode="cover" />
+        <Image
+          source={status.photo_url}
+          style={styles.photo}
+          contentFit="cover"
+          transition={200}
+          cachePolicy="memory-disk"
+        />
       ) : null}
 
       <View style={styles.reactions}>

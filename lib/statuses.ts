@@ -179,14 +179,22 @@ export async function postStatus(opts: {
   return shape(data as unknown as RawStatusRow, u.user?.id ?? null);
 }
 
+/**
+ * Toggle a drop or star reaction. Stars also add (or remove) a follow on the
+ * post's author so their splashes start showing up in My list — per the spec
+ * "the User can ... add the person and their statuses ... ('star' symbol)".
+ */
 export async function toggleReaction(
   statusId: string,
   kind: 'drop' | 'star',
-  active: boolean
+  active: boolean,
+  authorId?: string
 ): Promise<void> {
   const { data: u } = await supabase.auth.getUser();
   if (!u.user) return;
+
   if (active) {
+    // Removing the reaction
     const { error } = await supabase
       .from('reactions')
       .delete()
@@ -194,21 +202,38 @@ export async function toggleReaction(
       .eq('user_id', u.user.id)
       .eq('kind', kind);
     if (error) throw error;
+
+    if (kind === 'star' && authorId && authorId !== u.user.id) {
+      // un-star also unfollows
+      await unfollow(authorId);
+    }
   } else {
+    // Adding the reaction; ignore duplicate-key races
     const { error } = await supabase
       .from('reactions')
-      .insert({ status_id: statusId, kind });
+      .upsert(
+        { status_id: statusId, kind, user_id: u.user.id },
+        { onConflict: 'status_id,user_id,kind', ignoreDuplicates: true }
+      );
     if (error) throw error;
+
+    if (kind === 'star' && authorId && authorId !== u.user.id) {
+      await follow(authorId);
+    }
   }
 }
 
 /** When user stars someone (in detail view), also add to follows. */
 export async function follow(followedId: string): Promise<void> {
+  const { data: u } = await supabase.auth.getUser();
+  if (!u.user) return;
   const { error } = await supabase
     .from('follows')
-    .insert({ followed_id: followedId })
-    .select();
-  if (error && !error.message.includes('duplicate')) throw error;
+    .upsert(
+      { follower_id: u.user.id, followed_id: followedId },
+      { onConflict: 'follower_id,followed_id', ignoreDuplicates: true }
+    );
+  if (error) throw error;
 }
 
 export async function unfollow(followedId: string): Promise<void> {

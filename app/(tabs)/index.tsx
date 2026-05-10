@@ -87,7 +87,7 @@ export default function Feed() {
       )
     );
     try {
-      await toggleReaction(status.id, kind, active);
+      await toggleReaction(status.id, kind, active, status.user_id);
     } catch (err) {
       console.warn('Reaction failed:', err);
       load();

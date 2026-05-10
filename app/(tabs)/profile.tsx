@@ -4,10 +4,10 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -123,7 +123,12 @@ export default function ProfileTab() {
 
         <Pressable onPress={onAvatarPress} style={styles.avatarWrap}>
           {v.avatar_url ? (
-            <Image source={{ uri: v.avatar_url }} style={styles.avatarImg} />
+            <Image
+              source={v.avatar_url}
+              style={styles.avatarImg}
+              contentFit="cover"
+              transition={150}
+            />
           ) : (
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.initial}>{initials}</Text>

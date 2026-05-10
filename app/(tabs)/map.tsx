@@ -100,7 +100,7 @@ export default function MapTab() {
       });
     }
     try {
-      await toggleReaction(status.id, kind, active);
+      await toggleReaction(status.id, kind, active, status.user_id);
     } catch {
       load();
     }

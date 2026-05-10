@@ -10,8 +10,8 @@ import {
   Platform,
   Keyboard,
   Modal,
-  Image,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -166,7 +166,12 @@ export default function NewSplash() {
 
           {photoUrl && (
             <View style={styles.photoWrap}>
-              <Image source={{ uri: photoUrl }} style={styles.photo} />
+              <Image
+                source={photoUrl}
+                style={styles.photo}
+                contentFit="cover"
+                transition={150}
+              />
               <Pressable onPress={() => setPhotoUrl(null)} style={styles.photoRemove}>
                 <CloseIcon size={16} color={colors.text} />
               </Pressable>

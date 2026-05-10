@@ -5,8 +5,8 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
-  Image,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useEffect, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -57,7 +57,7 @@ export default function StatusDetail() {
         kind === 'star' ? (status.star_count ?? 0) + (active ? -1 : 1) : status.star_count,
     });
     try {
-      await toggleReaction(status.id, kind, active);
+      await toggleReaction(status.id, kind, active, status.user_id);
     } catch {
       load();
     }
@@ -107,7 +107,12 @@ export default function StatusDetail() {
 
         <View style={styles.who}>
           {status.avatar_url ? (
-            <Image source={{ uri: status.avatar_url }} style={styles.avatarImg} />
+            <Image
+              source={status.avatar_url}
+              style={styles.avatarImg}
+              contentFit="cover"
+              transition={150}
+            />
           ) : (
             <View style={styles.avatar}>
               <Text style={styles.initial}>{initials}</Text>
@@ -122,7 +127,13 @@ export default function StatusDetail() {
         {status.body ? <Text style={styles.body}>{status.body}</Text> : null}
 
         {status.photo_url ? (
-          <Image source={{ uri: status.photo_url }} style={styles.photo} resizeMode="cover" />
+          <Image
+            source={status.photo_url}
+            style={styles.photo}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
+          />
         ) : null}
       </ScrollView>
 

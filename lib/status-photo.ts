@@ -1,30 +1,54 @@
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
-/** Pick → upload to status-photos bucket → return public URL or null. */
+const MAX_DIM = 1080; // long edge in px
+const COMPRESS_QUALITY = 0.6;
+
+/**
+ * Pick a photo, resize/compress it, upload to status-photos bucket,
+ * return the public URL or null on cancel/failure.
+ */
 export async function pickAndUploadStatusPhoto(userId: string): Promise<string | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return null;
 
-  const result = await ImagePicker.launchImageLibraryAsync({
+  const picked = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsEditing: false,
-    quality: 0.7,
-    base64: true,
+    quality: 1, // we re-compress after resizing
+    exif: false,
   });
-  if (result.canceled || !result.assets?.[0]) return null;
+  if (picked.canceled || !picked.assets?.[0]) return null;
+  const asset = picked.assets[0];
 
-  const asset = result.assets[0];
-  if (!asset.base64) return null;
+  // Resize to MAX_DIM on the long edge to keep payloads small (fast upload + display)
+  const longEdge = Math.max(asset.width || 0, asset.height || 0);
+  const resizeAction =
+    longEdge > MAX_DIM
+      ? asset.width >= asset.height
+        ? { resize: { width: MAX_DIM } }
+        : { resize: { height: MAX_DIM } }
+      : null;
 
-  const ext = (asset.uri.match(/\.(\w+)(?:\?|$)/)?.[1] || 'jpg').toLowerCase();
-  const path = `${userId}/${Date.now()}.${ext}`;
-  const bytes = decodeBase64(asset.base64);
+  const manipulated = await ImageManipulator.manipulateAsync(
+    asset.uri,
+    resizeAction ? [resizeAction] : [],
+    {
+      compress: COMPRESS_QUALITY,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    }
+  );
+  if (!manipulated.base64) return null;
+
+  const path = `${userId}/${Date.now()}.jpg`;
+  const bytes = decodeBase64(manipulated.base64);
 
   const { error: upErr } = await supabase.storage
     .from('status-photos')
     .upload(path, bytes.buffer as ArrayBuffer, {
-      contentType: asset.mimeType || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+      contentType: 'image/jpeg',
       upsert: false,
     });
   if (upErr) {
